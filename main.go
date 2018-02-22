@@ -2,91 +2,74 @@ package main
 
 import (
 	"context"
-	"io"
+	"encoding/json"
 	"log"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
-	"github.com/gorilla/mux"
-	// "github.com/zachvanuum/league-lib"
+	httptransport "github.com/go-kit/kit/transport/http"
+
+	"github.com/zachvanuum/league-info-server/handler"
+	"github.com/zachvanuum/league-info-server/service"
+	"github.com/zachvanuum/league-lib"
 )
 
-type Server struct {
-	http.Server
-	shutdownReq chan bool
-	reqCount    uint32
-}
+// type Server struct {
+// 	http.Server
+// 	Client   *leaguelib.LeagueClient
+// 	ReqCount uint32
+// }
 
 func main() {
-	// leagueClient := leaguelib.NewLeagueClient("RGAPI-9ce99ca9-6f83-4af2-a30b-e50c5de8ea05", leaguelib.NorthAmerica)
+	leagueClient := leaguelib.NewLeagueClient("RGAPI-676bb774-b3c1-44ec-b695-e3703e31125f", leaguelib.NorthAmerica)
+	championsService := service.ChampionService{
+		LeagueClient: leagueClient,
+	}
 
-	server := newServer()
+	championsHandler := httptransport.NewServer(
+		handler.MakeChampionsEndpoint(championsService),
+		handler.DecodeChampionsRequest,
+		encodeResponse,
+	)
+
+	http.Handle("/champions", championsHandler)
 
 	done := make(chan bool)
 	go func() {
-		log.Printf("Starting server listening on %s\n", server.Server.Addr)
-		err := server.ListenAndServe()
-		if err != nil {
-			log.Printf("Error with HTTP server: %v", err)
-		}
+		log.Printf("Starting server listening on port 8080\n")
+		log.Printf("%v\n", http.ListenAndServe(":8080", nil))
+		// err := server.ListenAndServe()
+		// if err != nil {
+		// 	log.Printf("Error with HTTP server: %v", err)
+		// }
 		done <- true
 	}()
 
-	server.waitShutdown()
+	// server.waitShutdown()
 
 	<-done
 	log.Printf("Finished")
 }
 
-func newServer() *Server {
-	server := &Server{
-		Server: http.Server{
-			Addr:         ":8080",
-			ReadTimeout:  10 * time.Second,
-			WriteTimeout: 10 * time.Second,
-		},
-		shutdownReq: make(chan bool),
-	}
+// func (server *Server) waitShutdown() {
+// 	irqSig := make(chan os.Signal, 1)
+// 	signal.Notify(irqSig, syscall.SIGINT, syscall.SIGTERM)
 
-	server.Handler = initRouter()
-	return server
-}
+// 	select {
+// 	case sig := <-irqSig:
+// 		log.Printf("Shutdown request (signal: %v)", sig)
+// 	}
 
-func initRouter() http.Handler {
-	router := mux.NewRouter()
+// 	log.Printf("Shutting down HTTP server...")
 
-	router.HandleFunc("/health", HealthHandler).Methods("GET")
+// 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+// 	defer cancel()
 
-	return router
-}
+// 	err := server.Shutdown(ctx)
+// 	if err != nil {
+// 		log.Printf("Shutdown request error: %v", err)
+// 	}
+// }
 
-func (server *Server) waitShutdown() {
-	irqSig := make(chan os.Signal, 1)
-	signal.Notify(irqSig, syscall.SIGINT, syscall.SIGTERM)
-
-	select {
-	case sig := <-irqSig:
-		log.Printf("Shutdown request (signal: %v)", sig)
-	}
-
-	log.Printf("Shutting down HTTP server...")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	err := server.Shutdown(ctx)
-	if err != nil {
-		log.Printf("Shutdown request error: %v", err)
-	}
-}
-
-func HealthHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[HealthHandler] Received request")
-
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	io.WriteString(w, `{ "alive": true }`)
+func encodeResponse(_ context.Context, w http.ResponseWriter, response interface{}) error {
+	return json.NewEncoder(w).Encode(response)
 }
