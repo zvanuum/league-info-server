@@ -1,15 +1,20 @@
 package handler
 
 import (
-	"io"
-	"log"
+	"context"
 	"net/http"
+
+	"github.com/go-kit/kit/endpoint"
+	"github.com/zachvanuum/league-info-server/service"
 )
 
-func HealthHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[HealthHandler] Received request")
+func MakeHealthEndpoint(service service.HealthService) endpoint.Endpoint {
+	return func(ctx context.Context, request interface{}) (interface{}, error) {
+		return service.Health()
+	}
+}
 
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	io.WriteString(w, `{ "alive": true }`)
+//DecodeHealthRequest stubbed for creating handler, works as just a simple passthrough
+func DecodeHealthRequest(_ context.Context, _ *http.Request) (interface{}, error) {
+	return nil, nil
 }

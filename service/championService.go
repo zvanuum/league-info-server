@@ -13,11 +13,17 @@ type ChampionServicer interface {
 }
 
 type ChampionService struct {
-	LeagueClient *leaguelib.LeagueClient
+	leagueClient *leaguelib.LeagueClient
+}
+
+func NewChampionService(leagueClient *leaguelib.LeagueClient) ChampionService {
+	return ChampionService{
+		leagueClient: leagueClient,
+	}
 }
 
 func (championService *ChampionService) Champions(_ context.Context, values url.Values) (leaguemodel.Champions, error) {
-	champions := championService.LeagueClient.GetChampions(values)
+	champions := championService.leagueClient.GetChampions(nil)
 
 	return champions, nil
 }

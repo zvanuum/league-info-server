@@ -2,7 +2,7 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 
@@ -11,21 +11,29 @@ import (
 )
 
 type championsRequest struct {
-	Values url.Values `json:"values"`
+	Values url.Values `json:"values,omitempty"`
 }
 
 func MakeChampionsEndpoint(service service.ChampionService) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		req := request.(championsRequest)
-		champions := service.LeagueClient.GetChampions(req.Values)
+		champions, err := service.Champions(ctx, req.Values)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to retrieve champions, %v", err)
+		}
+
 		return champions, nil
 	}
 }
 
 func DecodeChampionsRequest(_ context.Context, r *http.Request) (interface{}, error) {
-	var request championsRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		return nil, err
+	query := r.URL.Query()
+	if len(query) == 0 {
+		query = nil
 	}
+	request := championsRequest{
+		Values: query,
+	}
+
 	return request, nil
 }
