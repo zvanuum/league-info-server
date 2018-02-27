@@ -9,9 +9,11 @@ import (
 	"os/signal"
 	"time"
 
+	kitlog "github.com/go-kit/kit/log"
 	kithttp "github.com/go-kit/kit/transport/http"
 	"github.com/gorilla/mux"
 
+	"github.com/zachvanuum/league-info-server"
 	"github.com/zachvanuum/league-info-server/handler"
 	"github.com/zachvanuum/league-info-server/service"
 	"github.com/zachvanuum/league-lib"
@@ -22,11 +24,12 @@ type server struct {
 	leagueClient *leaguelib.LeagueClient
 	services     *services
 	handlers     *handlers
+	logger       kitlog.Logger
 }
 
 type services struct {
 	HealthService    service.HealthService
-	ChampionsService service.ChampionService
+	ChampionsService service.ChampionsService
 }
 
 type handlers struct {
@@ -40,13 +43,21 @@ const (
 )
 
 func main() {
-	port := envString("PORT", defaultPort)
-	host := envString("HOST", defaultHost)
+	port := leagueinfoserver.EnvString("PORT", defaultPort)
+	host := leagueinfoserver.EnvString("HOST", defaultHost)
 	addr := host + ":" + port
+
+	var logger kitlog.Logger
+	{
+		logger = kitlog.NewLogfmtLogger(os.Stderr)
+		logger = kitlog.With(logger, "ts", kitlog.DefaultTimestampUTC)
+		logger = kitlog.With(logger, "caller", kitlog.DefaultCaller)
+	}
 
 	server := server{
 		router:       mux.NewRouter(),
-		leagueClient: leaguelib.NewLeagueClient("RGAPI-59a66e58-77d9-4fb4-993f-2e1542ad8241", leaguelib.NorthAmerica),
+		leagueClient: leaguelib.NewLeagueClient("RGAPI-6a8118a1-3626-41c8-b9c3-239b06a718ad", leaguelib.NorthAmerica),
+		logger:       logger,
 	}
 
 	server.createServices()
@@ -87,16 +98,26 @@ func (server *server) createServices() {
 }
 
 func (server *server) createHandlers() {
+	options := []kithttp.ServerOption{
+		kithttp.ServerErrorLogger(server.logger),
+	}
+
+	health := handler.MakeHealthEndpoint(server.services.HealthService)
+	health = leagueinfoserver.LoggingMiddleware(kitlog.With(server.logger, "method", "Health"))(health)
 	healthHandler := kithttp.NewServer(
-		handler.MakeHealthEndpoint(server.services.HealthService),
+		health,
 		handler.DecodeHealthRequest,
 		encodeResponse,
+		options...,
 	)
 
+	champions := handler.MakeChampionsEndpoint(server.services.ChampionsService)
+	champions = leagueinfoserver.LoggingMiddleware(kitlog.With(server.logger, "method", "Champions"))(champions)
 	championsHandler := kithttp.NewServer(
-		handler.MakeChampionsEndpoint(server.services.ChampionsService),
+		champions,
 		handler.DecodeChampionsRequest,
 		encodeResponse,
+		options...,
 	)
 
 	server.handlers = &handlers{
@@ -112,12 +133,4 @@ func (server *server) createRoutes() {
 
 func encodeResponse(_ context.Context, w http.ResponseWriter, response interface{}) error {
 	return json.NewEncoder(w).Encode(response)
-}
-
-func envString(env, fallback string) string {
-	e := os.Getenv(env)
-	if e == "" {
-		return fallback
-	}
-	return e
 }
